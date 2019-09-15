@@ -55,12 +55,9 @@ class RectifyNode : public rclcpp::Node
 
     int queue_size_;
     int interpolation;
-    std::string camera_namespace_;
     std::string image_rect;
-    std::string ns_image_topic_;
-
     std::string image_topic_;
-
+    
     std::mutex connect_mutex_;
     image_transport::Publisher pub_rect_;
 

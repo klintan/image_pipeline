@@ -48,13 +48,6 @@ RectifyNode::RectifyNode(const rclcpp::NodeOptions& options)
     {
       auto result = rcl_interfaces::msg::SetParametersResult();
       result.successful = true;
-      for (auto parameter : parameters) {
-        if (parameter.get_name() == "camera_namespace") {
-          camera_namespace_ = parameter.as_string();
-          RCLCPP_INFO(get_logger(), "camera_namespace: %s ", camera_namespace_.c_str());
-          break;
-        }
-      }
       for (auto parameter : parameters){
         if (parameter.get_name() == "image_topic") {
           this->createPublisher(parameter.as_string());
@@ -66,12 +59,7 @@ RectifyNode::RectifyNode(const rclcpp::NodeOptions& options)
 
   queue_size_ = this->declare_parameter("queue_size", 5);
   interpolation = this->declare_parameter("interpolation", 0);
-  
   image_topic_ = this->declare_parameter("image_topic", "/image_color");
-
-  if (!this->has_parameter("camera_namespace")) {
-    camera_namespace_ = this->declare_parameter("camera_namespace", "/image");
-  }
 
   this->createPublisher(image_topic_);
  
@@ -80,9 +68,9 @@ RectifyNode::RectifyNode(const rclcpp::NodeOptions& options)
 
 
 void RectifyNode::createPublisher(const std::string & parameter_name) {
-  ns_image_topic_ = camera_namespace_ + parameter_name;
-  image_rect = ns_image_topic_ + "_rect";
-  RCLCPP_INFO(this->get_logger(), "image_topic: %s, image_rect: %s", ns_image_topic_.c_str(), image_rect.c_str());
+  image_topic_ = std::string(this->get_namespace()) + parameter_name;
+  image_rect = image_topic_ + "_rect";
+  RCLCPP_INFO(this->get_logger(), "image_topic: %s, image_rect: %s", image_topic_.c_str(), image_rect.c_str());
   connectCb();
   std::lock_guard<std::mutex> lock(connect_mutex_);
   pub_rect_ = image_transport::create_publisher(this, image_rect);
@@ -99,7 +87,7 @@ void RectifyNode::connectCb( )
     sub_camera_.shutdown();
   else if (!sub_camera_)
   {*/
-  sub_camera_ = image_transport::create_camera_subscription(this, ns_image_topic_,
+  sub_camera_ = image_transport::create_camera_subscription(this, image_topic_,
                       std::bind(&RectifyNode::imageCb, 
                                 this, std::placeholders::_1, std::placeholders::_2), "raw");
   //}

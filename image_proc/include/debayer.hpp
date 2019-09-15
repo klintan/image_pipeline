@@ -57,7 +57,6 @@ class DebayerNode : public rclcpp::Node
   private:
     image_transport::Subscriber sub_raw_;
 
-    std::string camera_namespace_;
     int debayer_;
 
     int debayer_bilinear_ = 0;

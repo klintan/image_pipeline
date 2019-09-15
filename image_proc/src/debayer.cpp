@@ -47,47 +47,25 @@
 namespace image_proc
 {
 namespace enc = sensor_msgs::image_encodings;
-DebayerNode::DebayerNode(const rclcpp::NodeOptions& options)
-: Node("DebayerNode", options)
+DebayerNode::DebayerNode(const rclcpp::NodeOptions &options)
+    : Node("DebayerNode", options)
 {
-  auto parameter_change_cb =
-    [this](std::vector<rclcpp::Parameter> parameters) -> rcl_interfaces::msg::SetParametersResult
-    {
-      auto result = rcl_interfaces::msg::SetParametersResult();
-      result.successful = true;
-      for (auto parameter : parameters) {
-        if (parameter.get_name() == "camera_namespace") {
-          camera_namespace_ = parameter.as_string();
-          RCLCPP_INFO(get_logger(), "reset camera_namespace to %s! ", camera_namespace_.c_str());
-        }
-      DebayerNode::createPublisher();
-      }
-      return result;
-  };
-
   debayer_ = this->declare_parameter("debayer", 3);
-  camera_namespace_ = this->declare_parameter("camera_namespace", "/image");  
-  DebayerNode::createPublisher();
-  this->set_on_parameters_set_callback(parameter_change_cb);
-}
+  std::string image_mono = std::string(this->get_namespace()) + "/image_mono";
+  std::string image_color = std::string(this->get_namespace()) + "/image_color";
+  connectCb();
 
-
-void DebayerNode::createPublisher() {
-      std::string image_mono = camera_namespace_+"/image_mono";
-      std::string image_color = camera_namespace_+"/image_color";
-      connectCb();
-
-      std::lock_guard<std::mutex> lock(connect_mutex_);
-      RCLCPP_INFO(this->get_logger(), "mono: %s, color: %s", image_mono.c_str(), image_color.c_str());
-      pub_mono_  = image_transport::create_publisher(this, image_mono);
-      pub_color_ = image_transport::create_publisher(this, image_color);
+  std::lock_guard<std::mutex> lock(connect_mutex_);
+  RCLCPP_INFO(this->get_logger(), "mono: %s, color: %s", image_mono.c_str(), image_color.c_str());
+  pub_mono_ = image_transport::create_publisher(this, image_mono);
+  pub_color_ = image_transport::create_publisher(this, image_color);
 }
 
 // Handles (un)subscribing when clients (un)subscribe
 void DebayerNode::connectCb()
 {
   std::lock_guard<std::mutex> lock(connect_mutex_);
-  std::string topic = camera_namespace_ + "/image_raw";
+  std::string topic = std::string(this->get_namespace()) + "/image_raw";
   RCLCPP_INFO(this->get_logger(), "topic: %s", topic.c_str());
   /* 
   *  SubscriberStatusCallback not yet implemented
@@ -99,12 +77,12 @@ void DebayerNode::connectCb()
   else
   {*/
   sub_raw_ = image_transport::create_subscription(this, topic,
-                  std::bind(&DebayerNode::imageCb, this, std::placeholders:: _1),
-                  "raw");
+                                                  std::bind(&DebayerNode::imageCb, this, std::placeholders::_1),
+                                                  "raw");
   //}
 }
 
-void DebayerNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr& raw_msg)
+void DebayerNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr &raw_msg)
 {
   int bit_depth = enc::bitDepth(raw_msg->encoding);
   //@todo Fix as soon as bitDepth fixes it
@@ -122,7 +100,9 @@ void DebayerNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr& raw_msg
         RCLCPP_WARN(this->get_logger(),
                     "Raw image data from topic '%s' has unsupported depth: %d",
                     sub_raw_.getTopic().c_str(), bit_depth);
-      } else {
+      }
+      else
+      {
         // Use cv_bridge to convert to Mono. If a type is not supported,
         // it will error out there
         sensor_msgs::msg::Image::SharedPtr gray_msg;
@@ -160,67 +140,68 @@ void DebayerNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr& raw_msg
   {
     pub_color_.publish(raw_msg);
   }
-  else if (enc::isBayer(raw_msg->encoding)) {
+  else if (enc::isBayer(raw_msg->encoding))
+  {
     int type = bit_depth == 8 ? CV_8U : CV_16U;
     const cv::Mat bayer(raw_msg->height, raw_msg->width, CV_MAKETYPE(type, 1),
-                        const_cast<uint8_t*>(&raw_msg->data[0]), raw_msg->step);
+                        const_cast<uint8_t *>(&raw_msg->data[0]), raw_msg->step);
 
-      sensor_msgs::msg::Image::SharedPtr color_msg = std::make_shared<sensor_msgs::msg::Image>();
-      color_msg->header   = raw_msg->header;
-      color_msg->height   = raw_msg->height;
-      color_msg->width    = raw_msg->width;
-      color_msg->encoding = bit_depth == 8? enc::BGR8 : enc::BGR16;
-      color_msg->step     = color_msg->width * 3 * (bit_depth / 8);
-      color_msg->data.resize(color_msg->height * color_msg->step);
+    sensor_msgs::msg::Image::SharedPtr color_msg = std::make_shared<sensor_msgs::msg::Image>();
+    color_msg->header = raw_msg->header;
+    color_msg->height = raw_msg->height;
+    color_msg->width = raw_msg->width;
+    color_msg->encoding = bit_depth == 8 ? enc::BGR8 : enc::BGR16;
+    color_msg->step = color_msg->width * 3 * (bit_depth / 8);
+    color_msg->data.resize(color_msg->height * color_msg->step);
 
-      cv::Mat color(color_msg->height, color_msg->width, CV_MAKETYPE(type, 3),
-                    &color_msg->data[0], color_msg->step);
+    cv::Mat color(color_msg->height, color_msg->width, CV_MAKETYPE(type, 3),
+                  &color_msg->data[0], color_msg->step);
 
-      int algorithm;
-        // std::loc_guard<std::recursive_mutex> loc(config_mutex_)
-      algorithm = debayer_;
-      if (algorithm == debayer_edgeaware_ ||
-          algorithm == debayer_edgeaware_weighted_)
+    int algorithm;
+    // std::loc_guard<std::recursive_mutex> loc(config_mutex_)
+    algorithm = debayer_;
+    if (algorithm == debayer_edgeaware_ ||
+        algorithm == debayer_edgeaware_weighted_)
+    {
+      // These algorithms are not in OpenCV yet
+      if (raw_msg->encoding != enc::BAYER_GRBG8)
       {
-        // These algorithms are not in OpenCV yet
-        if (raw_msg->encoding != enc::BAYER_GRBG8)
-        {
-          RCLCPP_WARN(this->get_logger(), "Edge aware algorithms currently only support GRBG8 Bayer. "
-                                "Falling back to bilinear interpolation.");
-          algorithm = debayer_bilinear_;
-        }
+        RCLCPP_WARN(this->get_logger(), "Edge aware algorithms currently only support GRBG8 Bayer. "
+                                        "Falling back to bilinear interpolation.");
+        algorithm = debayer_bilinear_;
+      }
+      else
+      {
+        if (algorithm == debayer_edgeaware_)
+          debayerEdgeAware(bayer, color);
         else
-        {
-          if (algorithm == debayer_edgeaware_)
-            debayerEdgeAware(bayer, color);
-          else
-            debayerEdgeAwareWeighted(bayer, color);
-        }
+          debayerEdgeAwareWeighted(bayer, color);
       }
-      if (algorithm == debayer_bilinear_ ||
-          algorithm == debayer_vng_)
-      {
-        int code = -1;
-        if (raw_msg->encoding == enc::BAYER_RGGB8 ||
-            raw_msg->encoding == enc::BAYER_RGGB16)
-          code = cv::COLOR_BayerBG2BGR;
-        else if (raw_msg->encoding == enc::BAYER_BGGR8 ||
-                 raw_msg->encoding == enc::BAYER_BGGR16)
-          code = cv::COLOR_BayerRG2BGR;
-        else if (raw_msg->encoding == enc::BAYER_GBRG8 ||
-                 raw_msg->encoding == enc::BAYER_GBRG16)
-          code = cv::COLOR_BayerGR2BGR;
-        else if (raw_msg->encoding == enc::BAYER_GRBG8 ||
-                 raw_msg->encoding == enc::BAYER_GRBG16)
-          code = cv::COLOR_BayerGB2BGR;
+    }
+    if (algorithm == debayer_bilinear_ ||
+        algorithm == debayer_vng_)
+    {
+      int code = -1;
+      if (raw_msg->encoding == enc::BAYER_RGGB8 ||
+          raw_msg->encoding == enc::BAYER_RGGB16)
+        code = cv::COLOR_BayerBG2BGR;
+      else if (raw_msg->encoding == enc::BAYER_BGGR8 ||
+               raw_msg->encoding == enc::BAYER_BGGR16)
+        code = cv::COLOR_BayerRG2BGR;
+      else if (raw_msg->encoding == enc::BAYER_GBRG8 ||
+               raw_msg->encoding == enc::BAYER_GBRG16)
+        code = cv::COLOR_BayerGR2BGR;
+      else if (raw_msg->encoding == enc::BAYER_GRBG8 ||
+               raw_msg->encoding == enc::BAYER_GRBG16)
+        code = cv::COLOR_BayerGB2BGR;
 
-        if (algorithm == debayer_vng_)
-          code += cv::COLOR_BayerBG2BGR_VNG - cv::COLOR_BayerBG2BGR;
+      if (algorithm == debayer_vng_)
+        code += cv::COLOR_BayerBG2BGR_VNG - cv::COLOR_BayerBG2BGR;
 
-        cv::cvtColor(bayer, color, code);
-      }
-      RCLCPP_INFO(this->get_logger(), "Publish color!");
-      pub_color_.publish(color_msg);
+      cv::cvtColor(bayer, color, code);
+    }
+    RCLCPP_INFO(this->get_logger(), "Publish color!");
+    pub_color_.publish(color_msg);
   }
   else if (raw_msg->encoding == enc::YUV422)
   {
@@ -252,7 +233,7 @@ void DebayerNode::imageCb(const sensor_msgs::msg::Image::ConstSharedPtr& raw_msg
   }
 }
 
-} // namespace test_image_proc	
+} // namespace image_proc
 
 #include "rclcpp_components/register_node_macro.hpp"
 

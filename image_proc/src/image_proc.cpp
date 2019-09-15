@@ -54,8 +54,6 @@ int main(int argc, char * argv[])
 
   rclcpp::init(argc, argv);
 
-  std::string camera_namespace = "image";
-
   rclcpp::executors::SingleThreadedExecutor exec;
   const rclcpp::NodeOptions options;
 
